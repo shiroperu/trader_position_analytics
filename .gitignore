@@ -209,6 +209,9 @@ __marimo__/
 # Project: generated data files
 data/*.xlsx
 
+# Project: ChromaDB persistent data
+chromadb_data/
+
 # Project: log files
 logs/*.log
 logs/launchd_*.log

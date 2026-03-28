@@ -24,6 +24,13 @@ API_RETRY_DELAY = 3  # seconds
 API_RATE_LIMIT = 1  # seconds between requests
 
 # ============================================================
+# ChromaDB設定
+# ============================================================
+CHROMADB_DIR = BASE_DIR / "chromadb_data"
+CHROMADB_COLLECTION_SENTIMENT = "token_sentiment"
+CHROMADB_COLLECTION_MATRIX = "trader_token_matrix"
+
+# ============================================================
 # トレーダーリスト（26名・4 Tier）
 # (Tier, Rank, Name, Address, 備考)
 # ============================================================
