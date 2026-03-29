@@ -1,7 +1,8 @@
-"""メインエントリポイント: Phase 1 (ポジション取得) → Phase 2 (センチメント分析) → Slack通知 を順次実行"""
+"""メインエントリポイント: Phase 1 (ポジション取得) → Phase 2 (センチメント分析) → Phase 3 (ChromaDB) → Slack通知 を順次実行"""
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 import time
@@ -12,38 +13,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.config import setup_logging
 from scripts.fetch_positions import fetch_positions
-from scripts.analyze_sentiment import analyze_sentiment
+from scripts.analyze_sentiment import analyze_sentiment, flatten_all_data
 from scripts.store_chromadb import store_to_chromadb
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Hyperliquid Position Tracker")
+    parser.add_argument("--excel", action="store_true", help="Excel出力を有効化（デフォルト: 無効）")
+    args = parser.parse_args()
+
     logger = setup_logging()
     start = time.time()
 
     logger.info("=== Hyperliquid Position Tracker Started ===")
 
     # Phase 1: ポジション取得
-    positions_file = fetch_positions(logger)
+    result = fetch_positions(logger, write_excel=args.excel)
 
-    if positions_file is None:
-        logger.error("Phase 1 failed. Skipping Phase 2.")
+    if result is None:
+        logger.error("Phase 1 failed.")
         elapsed = time.time() - start
         logger.error(f"=== Aborted ({elapsed:.1f}s) ===")
         return 1
 
-    # Phase 2: センチメント分析
-    analysis_file = analyze_sentiment(positions_file, logger)
+    all_data, timestamp = result
+    rows = flatten_all_data(all_data)
 
-    if analysis_file is None:
+    # Phase 2: センチメント分析
+    token_results = analyze_sentiment(rows, logger, write_excel=args.excel, timestamp=timestamp)
+
+    if token_results is None:
         logger.warning("Phase 2 failed.")
 
     # Phase 3: ChromaDB保存
-    if positions_file is not None:
-        stored = store_to_chromadb(positions_file, logger)
-        if not stored:
-            logger.warning("Phase 3 (ChromaDB) failed.")
-    else:
-        logger.info("Phase 3: Skipped (no position data).")
+    stored = store_to_chromadb(rows, timestamp, logger)
+    if not stored:
+        logger.warning("Phase 3 (ChromaDB) failed.")
 
     # Phase 4: Slack にセンチメント差分を投稿
     _post_sentiment_to_slack(logger)

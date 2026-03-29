@@ -22,8 +22,26 @@ from scripts.config import DATA_DIR, STYLES, TRADERS, build_styles, setup_loggin
 
 
 # ============================================================
-# ポジションExcel読み込み
+# データ変換・読み込み
 # ============================================================
+
+def flatten_all_data(all_data: list[dict]) -> list[dict]:
+    """fetch_positions() の all_data（ネスト構造）をフラットな rows に変換する。
+
+    all_data: [{tier, name, acct_value, positions: [{coin, side, ...}]}]
+    rows:     [{tier, trader, acct_value, coin, side, ...}]
+    """
+    rows = []
+    for trader_data in all_data:
+        for pos in trader_data.get("positions", []):
+            rows.append({
+                "tier": trader_data["tier"],
+                "trader": trader_data["name"],
+                "acct_value": trader_data["acct_value"],
+                **pos,
+            })
+    return rows
+
 
 def load_positions(filepath: str) -> list[dict]:
     """ポジションExcelを読み込み、行データのリストを返す。"""
@@ -504,22 +522,30 @@ def write_sheet4_notes(wb, timestamp, prev_file, token_results, rows, styles):
 # メインエントリポイント
 # ============================================================
 
-def analyze_sentiment(positions_file: str, logger=None) -> str | None:
-    """ポジションExcelを入力としてセンチメント分析を実行。
+def analyze_sentiment(positions_input, logger=None, write_excel=False,
+                      timestamp: str | None = None) -> list[dict] | None:
+    """センチメント分析を実行。
 
     Args:
-        positions_file: Phase 1 で生成されたExcelファイルパス
+        positions_input: Excelファイルパス(str) または フラット化済みrows(list[dict])
         logger: ロガー
+        write_excel: TrueならExcelファイルを生成
+        timestamp: スナップショットのタイムスタンプ（rows直接渡し時に必要）
 
-    Returns: 分析結果Excelファイルパス。失敗時None。
+    Returns: token_results のリスト。失敗時None。
     """
     if logger is None:
         logger = setup_logging()
 
-    logger.info(f"Phase 2: Loading positions from {Path(positions_file).name}")
+    # データ読み込み
+    if isinstance(positions_input, str):
+        logger.info(f"Phase 2: Loading positions from {Path(positions_input).name}")
+        rows = load_positions(positions_input)
+        ts_part = Path(positions_input).stem.replace("hl_positions_", "")
+    else:
+        rows = positions_input
+        ts_part = timestamp or ""
 
-    # ポジション読み込み
-    rows = load_positions(positions_file)
     if not rows:
         logger.error("No position data found. Skipping analysis.")
         return None
@@ -528,9 +554,18 @@ def analyze_sentiment(positions_file: str, logger=None) -> str | None:
     token_results = analyze_tokens(rows)
     logger.info(f"Phase 2: Analyzing sentiment ({len(token_results)} tokens)")
 
-    # 前回比較
-    prev_file = find_previous_file(positions_file)
+    # 前回比較（Excelファイルが存在する場合のみ）
     changes = {}
+    prev_file = None
+    if isinstance(positions_input, str):
+        prev_file = find_previous_file(positions_input)
+    else:
+        # メモリ入力時: data/ 内の最新Excelから前回データを取得
+        pattern = str(DATA_DIR / "hl_positions_*.xlsx")
+        files = sorted(glob.glob(pattern))
+        if files:
+            prev_file = files[-1]
+
     if prev_file:
         logger.info(f"Comparing with: {Path(prev_file).name}")
         prev_rows = load_positions(prev_file)
@@ -540,33 +575,33 @@ def analyze_sentiment(positions_file: str, logger=None) -> str | None:
     else:
         logger.info("No previous file found. Skipping comparison.")
 
-    # タイムスタンプ抽出（ファイル名から）
-    basename = Path(positions_file).stem  # hl_positions_YYYY-MM-DD_HH-mm
-    ts_part = basename.replace("hl_positions_", "")
-    output_file = DATA_DIR / f"hl_analysis_{ts_part}.xlsx"
+    # Excel出力（オプション）
+    if write_excel and ts_part:
+        output_file = DATA_DIR / f"hl_analysis_{ts_part}.xlsx"
+        styles = build_styles()
+        wb = Workbook()
 
-    # Excel出力
-    styles = build_styles()
-    wb = Workbook()
+        write_sheet1_sentiment(wb, token_results, changes, styles)
+        write_sheet2_chart(wb, token_results, styles)
+        write_sheet3_matrix(wb, rows, token_results, styles)
 
-    write_sheet1_sentiment(wb, token_results, changes, styles)
-    write_sheet2_chart(wb, token_results, styles)
-    write_sheet3_matrix(wb, rows, token_results, styles)
+        prev_name = Path(prev_file).name if prev_file else None
+        write_sheet4_notes(wb, ts_part, prev_name, token_results, rows, styles)
 
-    prev_name = Path(prev_file).name if prev_file else None
-    write_sheet4_notes(wb, ts_part, prev_name, token_results, rows, styles)
+        wb.save(output_file)
+        logger.info(f"Saved: {output_file.relative_to(DATA_DIR.parent)}")
 
-    wb.save(output_file)
-    logger.info(f"Saved: {output_file.relative_to(DATA_DIR.parent)}")
-    return str(output_file)
+    return token_results
 
 
 if __name__ == "__main__":
     log = setup_logging()
+    excel_flag = "--excel" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--excel"]
 
     # 引数でファイル指定 or data/ 内の最新を使用
-    if len(sys.argv) > 1:
-        pos_file = sys.argv[1]
+    if args:
+        pos_file = args[0]
     else:
         pattern = str(DATA_DIR / "hl_positions_*.xlsx")
         files = sorted(glob.glob(pattern))
@@ -576,7 +611,7 @@ if __name__ == "__main__":
         pos_file = files[-1]
         log.info(f"Using latest: {Path(pos_file).name}")
 
-    result = analyze_sentiment(pos_file, log)
+    result = analyze_sentiment(pos_file, log, write_excel=excel_flag)
     if result:
         log.info("=== Phase 2 Done ===")
     else:

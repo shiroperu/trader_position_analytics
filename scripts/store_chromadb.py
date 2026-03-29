@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
 import chromadb
 
-from scripts.analyze_sentiment import analyze_tokens, build_trader_matrix, load_positions
+from scripts.analyze_sentiment import analyze_tokens, build_trader_matrix, flatten_all_data, load_positions
 from scripts.config import (
     CHROMADB_COLLECTION_MATRIX,
     CHROMADB_COLLECTION_SENTIMENT,
@@ -79,11 +79,12 @@ def _extract_timestamp(positions_file: str) -> str:
 # メイン保存処理
 # ============================================================
 
-def store_to_chromadb(positions_file: str, logger) -> bool:
+def store_to_chromadb(rows: list[dict], timestamp: str, logger) -> bool:
     """ポジションデータをChromaDBに保存する。
 
     Args:
-        positions_file: Phase 1 で生成されたExcelファイルパス
+        rows: フラット化されたポジションデータ（list[dict]）
+        timestamp: スナップショットのタイムスタンプ（YYYY-MM-DD_HH-mm）
         logger: ロガー
 
     Returns: 成功時True、失敗時False
@@ -91,14 +92,12 @@ def store_to_chromadb(positions_file: str, logger) -> bool:
     try:
         logger.info("Phase 3: Storing data to ChromaDB")
 
-        # データ読み込み & 分析（Phase 2と同じロジックを再利用）
-        rows = load_positions(positions_file)
         if not rows:
             logger.error("Phase 3: No position data found.")
             return False
 
         token_results = analyze_tokens(rows)
-        snapshot_ts = _extract_timestamp(positions_file)
+        snapshot_ts = timestamp
         snapshot_date = snapshot_ts[:10]  # YYYY-MM-DD
         snapshot_hour = int(snapshot_ts[11:13]) if len(snapshot_ts) > 11 else 0
 
@@ -224,7 +223,9 @@ if __name__ == "__main__":
         pos_file = files[-1]
         log.info(f"Using latest: {Path(pos_file).name}")
 
-    success = store_to_chromadb(pos_file, log)
+    rows = load_positions(pos_file)
+    ts = _extract_timestamp(pos_file)
+    success = store_to_chromadb(rows, ts, log)
     if success:
         log.info("=== Phase 3 Done ===")
     else:

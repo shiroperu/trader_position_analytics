@@ -118,7 +118,7 @@ def parse_positions(data: dict, logger=None) -> tuple[float, list[dict]]:
     return acct_value, positions
 
 
-def write_excel(all_data: list[dict], timestamp: str, logger) -> str:
+def write_excel_file(all_data: list[dict], timestamp: str, logger) -> str:
     """ポジションデータをExcelに書き出す。返り値はファイルパス。"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"hl_positions_{timestamp}.xlsx"
@@ -229,10 +229,14 @@ def _write_row(ws, row, styles, tier, name, acct_value,
                     cell.number_format = "#,##0.00"
 
 
-def fetch_positions(logger=None) -> str | None:
-    """全トレーダーのポジションを取得してExcel出力。メインエントリポイント。
+def fetch_positions(logger=None, write_excel=False) -> tuple[list[dict], str] | None:
+    """全トレーダーのポジションを取得。オプションでExcel出力。
 
-    Returns: 出力ファイルパス。全失敗時はNone。
+    Args:
+        logger: ロガー
+        write_excel: TrueならExcelファイルを生成
+
+    Returns: (all_data, timestamp) のタプル。全失敗時はNone。
     """
     if logger is None:
         logger = setup_logging()
@@ -273,7 +277,7 @@ def fetch_positions(logger=None) -> str | None:
             time.sleep(API_RATE_LIMIT)
 
     if success_count == 0:
-        logger.error("All traders failed. No Excel file generated.")
+        logger.error("All traders failed.")
         return None
 
     active_traders = sum(1 for d in all_data if d["positions"])
@@ -282,14 +286,17 @@ def fetch_positions(logger=None) -> str | None:
         f"from {active_traders} active traders"
     )
 
-    filepath = write_excel(all_data, timestamp, logger)
-    return filepath
+    if write_excel:
+        write_excel_file(all_data, timestamp, logger)
+
+    return all_data, timestamp
 
 
 if __name__ == "__main__":
     log = setup_logging()
-    result = fetch_positions(log)
+    excel_flag = "--excel" in sys.argv
+    result = fetch_positions(log, write_excel=excel_flag)
     if result:
-        log.info(f"=== Phase 1 Done ===")
+        log.info("=== Phase 1 Done ===")
     else:
         log.error("=== Phase 1 Failed ===")

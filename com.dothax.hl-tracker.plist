@@ -7,7 +7,7 @@
     <string>com.dothax.hl-tracker</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/shroperu/Documents/workspace/trader_position_analytics/.venv/bin/python3</string>
+        <string>/Users/shroperu/Documents/workspace/trader_position_analytics/.venv/bin/python3.14</string>
         <string>/Users/shroperu/Documents/workspace/trader_position_analytics/scripts/run_all.py</string>
     </array>
     <key>StartCalendarInterval</key>
@@ -30,7 +30,9 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>VIRTUAL_ENV</key>
+        <string>/Users/shroperu/Documents/workspace/trader_position_analytics/.venv</string>
     </dict>
 </dict>
 </plist>
