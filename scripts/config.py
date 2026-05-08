@@ -29,6 +29,8 @@ API_RATE_LIMIT = 1  # seconds between requests
 CHROMADB_DIR = BASE_DIR / "chromadb_data"
 CHROMADB_COLLECTION_SENTIMENT = "token_sentiment"
 CHROMADB_COLLECTION_MATRIX = "trader_token_matrix"
+# 保持期間を超えたスナップショットは Phase 3 の末尾で削除される
+CHROMADB_RETENTION_DAYS = 30
 
 # ============================================================
 # トレーダーリスト（26名・4 Tier）

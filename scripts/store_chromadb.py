@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # スタンドアロン実行時のパス解決
@@ -18,6 +19,7 @@ from scripts.config import (
     CHROMADB_COLLECTION_MATRIX,
     CHROMADB_COLLECTION_SENTIMENT,
     CHROMADB_DIR,
+    CHROMADB_RETENTION_DAYS,
     DATA_DIR,
     setup_logging,
 )
@@ -113,6 +115,10 @@ def store_to_chromadb(rows: list[dict], timestamp: str, logger) -> bool:
 
         logger.info(f"Phase 3: ChromaDB storage complete "
                     f"({len(token_results)} tokens, matrix for top {len(top30_coins)} coins)")
+
+        # ----- Retention: 保持期間を超えた古いスナップショットを削除 -----
+        _purge_old_snapshots(client, logger)
+
         return True
 
     except Exception as e:
@@ -201,6 +207,65 @@ def _store_matrix(client: chromadb.PersistentClient, rows: list[dict],
     if ids:
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
     logger.info(f"  trader_token_matrix: {len(ids)} documents upserted")
+
+
+# ============================================================
+# 保持期間超過データのパージ
+# ============================================================
+
+def _collect_distinct_dates(collection, batch_size: int = 500) -> set[str]:
+    """コレクション内の snapshot_date (YYYY-MM-DD) を重複排除して列挙する。
+
+    ChromaDB は内部 SQLite の SQLITE_MAX_VARIABLE_NUMBER 制限に引っかかるため、
+    limit/offset でページングして取得する。
+    """
+    dates: set[str] = set()
+    offset = 0
+    while True:
+        results = collection.get(
+            include=["metadatas"],
+            limit=batch_size,
+            offset=offset,
+        )
+        metas = results["metadatas"]
+        if not metas:
+            break
+        for meta in metas:
+            d = meta.get("snapshot_date")
+            if d:
+                dates.add(d)
+        if len(metas) < batch_size:
+            break
+        offset += batch_size
+    return dates
+
+
+def _purge_old_snapshots(client: chromadb.PersistentClient, logger) -> None:
+    """CHROMADB_RETENTION_DAYS を超える古いスナップショットを両コレクションから削除する。
+
+    ChromaDB の $lt 演算子は数値のみ対応なので、
+    1) ページングで全 snapshot_date を列挙し、2) 古い日付を $in で一括削除する。
+    削除失敗は warning ログのみで処理を続行する（保存成功を優先）。
+    """
+    cutoff_date = (datetime.now() - timedelta(days=CHROMADB_RETENTION_DAYS)).strftime("%Y-%m-%d")
+    collection_names = [CHROMADB_COLLECTION_SENTIMENT, CHROMADB_COLLECTION_MATRIX]
+
+    for name in collection_names:
+        try:
+            collection = client.get_collection(name=name)
+            all_dates = _collect_distinct_dates(collection)
+            old_dates = sorted(d for d in all_dates if d < cutoff_date)
+            if not old_dates:
+                continue
+
+            before = collection.count()
+            collection.delete(where={"snapshot_date": {"$in": old_dates}})
+            after = collection.count()
+            deleted = before - after
+            logger.info(f"Retention: {name}: {deleted} docs purged "
+                        f"(snapshot_date < {cutoff_date}), {after} remain")
+        except Exception as e:
+            logger.warning(f"Retention: {name} purge failed: {e}")
 
 
 # ============================================================
