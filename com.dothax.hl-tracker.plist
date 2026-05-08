@@ -9,6 +9,7 @@
     <array>
         <string>/Users/shroperu/Documents/workspace/trader_position_analytics/.venv/bin/python3.14</string>
         <string>/Users/shroperu/Documents/workspace/trader_position_analytics/scripts/run_all.py</string>
+        <string>--excel</string>
     </array>
     <key>StartCalendarInterval</key>
     <array>
