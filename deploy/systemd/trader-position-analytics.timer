@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Hyperliquid Position Tracker every 4h (00,04,06,08,12,16,20,22 JST)
+
+[Timer]
+OnCalendar=*-*-* 00,04,06,08,12,16,20,22:00:00
+Persistent=true
+Unit=trader-position-analytics.service
+
+[Install]
+WantedBy=timers.target

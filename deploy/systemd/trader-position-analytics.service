@@ -1,0 +1,18 @@
+[Unit]
+Description=Hyperliquid Position Tracker (Phase 1+2+3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/trader_position_analytics
+EnvironmentFile=/opt/trader_position_analytics/.env
+ExecStart=/opt/trader_position_analytics/.venv/bin/python3.14 scripts/run_all.py --excel
+StandardOutput=append:/opt/trader_position_analytics/logs/systemd_stdout.log
+StandardError=append:/opt/trader_position_analytics/logs/systemd_stderr.log
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
