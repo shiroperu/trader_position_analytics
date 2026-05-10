@@ -62,7 +62,7 @@ ssh -t -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'sudo
 ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'apt-cache madison python3.14'
 ```
 
-→ 1行以上出れば deadsnakes に存在。空なら **pyenv フォールバック**（下記）。
+→ 1行以上出れば deadsnakes に存在。空なら、上の Note のとおり VPS には Python 3.14 が既にインストール済のはずなので動作確認のみで完了。
 
 ### Step ③ インストール（②で存在を確認した場合のみ）
 
@@ -73,37 +73,24 @@ ssh -t -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'sudo
 ### 動作確認
 
 ```bash
-ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'python3.14 --version && python3.14 -c "import venv; print(\"venv ok\")"'
+ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'python3.14 --version && python3.14 -c "import venv; print(\"venv ok\")" && which python3.14'
 ```
 
-→ `Python 3.14.x` と `venv ok` が出たら **Phase 1-2 完了**。`tasks/vps-migration.md` の 1-2 をチェック済みに更新する。
+→ `Python 3.14.x` と `venv ok` と絶対パス（例: `/usr/bin/python3.14`）が出たら **Phase 1-2 完了**。`tasks/vps-migration.md` の 1-2 をチェック済みに更新する。絶対パスは Phase 2-2 の systemd unit `ExecStart=` で利用するためメモしておく。
 
----
-
-## pyenv フォールバック（Step ② で deadsnakes に無かった場合）
-
-```bash
-ssh -t -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'sudo apt install -y build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev curl libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev'
-ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'curl https://pyenv.run | bash'
-ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'echo "export PATH=\"\$HOME/.pyenv/bin:\$PATH\"" >> ~/.bashrc && echo "eval \"\$(pyenv init -)\"" >> ~/.bashrc'
-ssh -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'bash -lc "pyenv install -l | grep \"^  3.14\" | tail -3"'
-# 出力で最新の 3.14.x を選んで（例: 3.14.0）:
-ssh -t -i ~/.ssh/gha_trader_deploy -o IdentitiesOnly=yes ubuntu@<VPS_HOST> 'bash -lc "pyenv install 3.14.0"'
-```
-
-pyenv 経由の場合、`python3.14` の絶対パスは `~/.pyenv/versions/3.14.x/bin/python3.14`。systemd unit の `ExecStart=` で絶対パス指定が必要。
+> **Note**: VPS には Python 3.14 が既にインストール済み。Step ① 〜 ③ は冪等動作（`apt install` は "already at newest version" で no-op）。Step ②③ を飛ばしてこの動作確認だけ実施しても可。
 
 ---
 
 ## Phase 1-3 以降の概要（Phase 1-2 完了後に再読み込み）
 
 `tasks/vps-migration.md` の Phase 1-3 以降を参照:
-- 1-3: プロジェクトディレクトリ作成
-- 1-4: venv 作成 + requirements.txt インストール
+- 1-3: プロジェクトディレクトリ作成（`/opt/trader_position_analytics`、ubuntu:ubuntu 所有、dexter と同階層）
+- 1-4: venv 作成 + requirements.txt インストール（`/opt/trader_position_analytics/.venv`）
 - 1-5: ChromaDB 既存データ scp 移送（Mac の launchd 一時停止が必要）
-- Phase 2: systemd unit/timer 作成
-- Phase 3: GitHub Actions deploy.yml
-- Phase 4: 検証
+- Phase 2: systemd unit/timer 作成（**system-level**: `/etc/systemd/system/`、dexter と統一）
+- Phase 3: GitHub Actions deploy.yml + NOPASSWD sudoers（`systemctl daemon-reload` のみ許可）
+- Phase 4: 検証（`sudo systemctl start ...` / `sudo journalctl -u ...`）
 - Phase 5: 旧環境停止
 
 ---
@@ -115,4 +102,3 @@ pyenv 経由の場合、`python3.14` の絶対パスは `~/.pyenv/versions/3.14.
 | 新鍵で password を聞かれる | VPS の `~/.ssh/authorized_keys` に gha_trader_deploy.pub が記載されているか確認 |
 | sudo がパスワードを要求 | `ssh -t` で pseudo-TTY 付与し対話入力 |
 | ssh コマンドが multi-line で壊れる | 1コマンド1行ずつ実行する |
-| deadsnakes に 3.14 が無い | pyenv フォールバックへ切替 |
