@@ -112,7 +112,15 @@ def _upload_excel_to_slack(excel_files: list[Path], logger) -> None:
 
 def _post_sentiment_to_slack(logger) -> None:
     """crypto-research-agent の sentiment コマンドを呼び出して Slack に差分を投稿する"""
-    agent_dir = Path.home() / "Documents" / "workspace" / "boxter" / "crypto-research-agent"
+    import os
+
+    # CRYPTO_RESEARCH_AGENT_DIR で上書き可能（Mac/VPS でパスが異なるため）
+    agent_dir_env = os.environ.get("CRYPTO_RESEARCH_AGENT_DIR")
+    if agent_dir_env:
+        agent_dir = Path(agent_dir_env)
+    else:
+        agent_dir = Path.home() / "Documents" / "workspace" / "boxter" / "crypto-research-agent"
+
     agent_python = agent_dir / ".venv" / "bin" / "python3"
 
     if not agent_python.exists():
