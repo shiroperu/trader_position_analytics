@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Rsync repository to VPS
+        run: |
+          rsync -av --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=~/.ssh/known_hosts" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.venv/' \
+            --exclude='data/' \
+            --exclude='logs/' \
+            --exclude='chromadb_data/' \
+            --exclude='.env' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='sample/' \
+            --exclude='.DS_Store' \
+            --exclude='.claude/' \
+            ./ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/trader_position_analytics/
+
+      - name: Generate and upload .env
+        run: |
+          cat > /tmp/vps.env <<EOF
+          SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL=${{ secrets.SLACK_CHANNEL }}
+          CRYPTO_RESEARCH_AGENT_DIR=/opt/bexter/dexter
+          EOF
+          chmod 600 /tmp/vps.env
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            /tmp/vps.env \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/trader_position_analytics/.env
+          rm -f /tmp/vps.env
+
+      - name: Install dependencies and reload systemd
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /opt/trader_position_analytics
+          chmod 600 .env
+          .venv/bin/pip install --quiet -r requirements.txt
+          sudo systemctl daemon-reload
+          echo "Deploy complete: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
