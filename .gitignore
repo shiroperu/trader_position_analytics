@@ -218,3 +218,7 @@ logs/launchd_*.log
 
 # macOS
 .DS_Store
+
+# Phase 5 cleanup: VPS migration backups (Mac side, after launchd retirement)
+chromadb_data.bak/
+logs/*.bak
